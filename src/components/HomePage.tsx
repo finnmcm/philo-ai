@@ -2,8 +2,14 @@
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { ArrowRight, BookOpen, Users, MessageSquare } from "lucide-react";
+import { useNavigate } from 'react-router-dom'
 
 const HomePage = () => {
+  const nav = useNavigate();
+  const goToDilemma = () => {
+    // navigate to "/target-path"
+    nav('/chat');
+  };
   const featuredPhilosophers = [
     {
       name: "Aristotle",
@@ -49,11 +55,11 @@ const HomePage = () => {
               <h1 className="text-2xl font-bold text-primary">PhiloAI</h1>
             </div>
             <nav className="hidden md:flex items-center space-x-6">
-              <a href="#" className="text-muted-foreground hover:text-primary transition-colors">
-                Explore Philosophers
+            <a href="/chat" className="text-muted-foreground hover:text-primary transition-colors">
+                Chat
               </a>
-              <a href="#" className="text-muted-foreground hover:text-primary transition-colors">
-                How It Works
+              <a href="/explore" className="text-muted-foreground hover:text-primary transition-colors">
+                Explore Philosophers
               </a>
               <Button variant="outline" size="sm">
                 Sign In
@@ -75,11 +81,11 @@ const HomePage = () => {
               From Aristotle to Kant, discover personalized guidance for life's tough decisions.
             </p>
             <div className="flex flex-col sm:flex-row gap-4 justify-center">
-              <Button size="lg" className="bg-accent hover:bg-accent/90 text-white px-8 py-4 text-lg">
+              <Button size="lg" className="bg-accent hover:bg-accent/90 text-white px-8 py-4 text-lg" onClick={goToDilemma}>
                 Submit Your Dilemma
                 <ArrowRight className="ml-2 h-5 w-5" />
               </Button>
-              <Button variant="outline" size="lg" className="px-8 py-4 text-lg">
+              <Button variant="outline" size="lg" className="px-8 py-4 text-lg" onClick={() => nav('/explore')}>
                 Explore Philosophers
               </Button>
             </div>
@@ -203,46 +209,9 @@ const HomePage = () => {
 
       {/* Footer */}
       <footer className="bg-gray-900 text-gray-300 py-12">
-        <div className="container mx-auto px-4">
-          <div className="grid md:grid-cols-4 gap-8">
-            <div>
-              <div className="flex items-center space-x-2 mb-4">
-                <BookOpen className="h-6 w-6" />
-                <span className="text-xl font-bold text-white">PhiloAI</span>
-              </div>
-              <p className="text-sm">
-                Connecting modern dilemmas with timeless wisdom.
-              </p>
-            </div>
-            <div>
-              <h5 className="font-semibold text-white mb-3">Product</h5>
-              <ul className="space-y-2 text-sm">
-                <li><a href="#" className="hover:text-white transition-colors">How It Works</a></li>
-                <li><a href="#" className="hover:text-white transition-colors">Philosophers</a></li>
-                <li><a href="#" className="hover:text-white transition-colors">Pricing</a></li>
-              </ul>
-            </div>
-            <div>
-              <h5 className="font-semibold text-white mb-3">Support</h5>
-              <ul className="space-y-2 text-sm">
-                <li><a href="#" className="hover:text-white transition-colors">Help Center</a></li>
-                <li><a href="#" className="hover:text-white transition-colors">Contact Us</a></li>
-                <li><a href="#" className="hover:text-white transition-colors">Privacy Policy</a></li>
-              </ul>
-            </div>
-            <div>
-              <h5 className="font-semibold text-white mb-3">Company</h5>
-              <ul className="space-y-2 text-sm">
-                <li><a href="#" className="hover:text-white transition-colors">About</a></li>
-                <li><a href="#" className="hover:text-white transition-colors">Blog</a></li>
-                <li><a href="#" className="hover:text-white transition-colors">Careers</a></li>
-              </ul>
-            </div>
-          </div>
           <div className="border-t border-gray-800 mt-8 pt-8 text-center text-sm">
-            <p>&copy; 2024 PhiloAI. All rights reserved.</p>
+            <p> A Finn McMillan Production</p>
           </div>
-        </div>
       </footer>
     </div>
   );
