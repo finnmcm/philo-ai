@@ -1,107 +1,21 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Search, MessageSquare, BookOpen, Filter } from "lucide-react";
+import { usePhilosophers } from "../hooks/usePhilosophers";
+
 
 const ExplorePhilosophers = () => {
   const nav = useNavigate();
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedEra, setSelectedEra] = useState("all");
-
-  const philosophers = [
-    {
-      id: "aristotle",
-      name: "Aristotle",
-      era: "384-322 BCE",
-      image: "⚖️",
-      specialties: ["Virtue Ethics", "Practical Wisdom", "Character Development"],
-      description: "Master of finding the golden mean between extremes. Perfect for complex decisions involving competing values and responsibilities.",
-      keyWorks: ["Nicomachean Ethics", "Politics", "Metaphysics"],
-      quote: "The good of the community is greater and more perfect than the good of the individual.",
-      matchPercentage: 94
-    },
-    {
-      id: "kant",
-      name: "Immanuel Kant",
-      era: "1724-1804",
-      image: "🏛️",
-      specialties: ["Duty Ethics", "Universal Principles", "Moral Law"],
-      description: "Champion of reason and universal moral laws. Ideal for questions about right vs. wrong and ethical consistency.",
-      keyWorks: ["Groundwork of the Metaphysics of Morals", "Critique of Pure Reason"],
-      quote: "Act only according to that maxim whereby you can at the same time will that it should become a universal law.",
-      matchPercentage: 87
-    },
-    {
-      id: "mill",
-      name: "John Stuart Mill",
-      era: "1806-1873",
-      image: "🌟",
-      specialties: ["Utilitarianism", "Social Good", "Individual Liberty"],
-      description: "Advocate for the greatest happiness principle. Best for decisions affecting multiple people or society.",
-      keyWorks: ["Utilitarianism", "On Liberty", "The Subjection of Women"],
-      quote: "The greatest happiness of the greatest number is the foundation of morals and legislation.",
-      matchPercentage: 82
-    },
-    {
-      id: "confucius",
-      name: "Confucius",
-      era: "551-479 BCE",
-      image: "🎋",
-      specialties: ["Social Harmony", "Virtuous Leadership", "Family Ethics"],
-      description: "Teacher of social harmony and virtuous living. Excellent for family, workplace, and community dilemmas.",
-      keyWorks: ["Analects", "The Great Learning", "Doctrine of the Mean"],
-      quote: "The superior man is modest in his speech, but exceeds in his actions.",
-      matchPercentage: 78
-    },
-    {
-      id: "epicurus",
-      name: "Epicurus",
-      era: "341-270 BCE",
-      image: "🍇",
-      specialties: ["Hedonism", "Tranquility", "Simple Living"],
-      description: "Philosopher of pleasure and tranquility. Perfect for questions about happiness, desire, and life satisfaction.",
-      keyWorks: ["Letter to Menoeceus", "Principal Doctrines"],
-      quote: "Pleasure is the beginning and end of living happily.",
-      matchPercentage: 75
-    },
-    {
-      id: "stoic",
-      name: "Marcus Aurelius",
-      era: "121-180 CE",
-      image: "🛡️",
-      specialties: ["Stoicism", "Self-Control", "Acceptance"],
-      description: "Emperor and Stoic philosopher. Ideal for dealing with adversity, change, and things beyond your control.",
-      keyWorks: ["Meditations"],
-      quote: "The happiness of your life depends upon the quality of your thoughts.",
-      matchPercentage: 71
-    },
-    {
-      id: "nietzsche",
-      name: "Friedrich Nietzsche",
-      era: "1844-1900",
-      image: "🔥",
-      specialties: ["Individualism", "Self-Overcoming", "Creative Values"],
-      description: "Challenger of conventional morality. Best for questions about authenticity, creativity, and personal growth.",
-      keyWorks: ["Thus Spoke Zarathustra", "Beyond Good and Evil", "The Genealogy of Morals"],
-      quote: "He who has a why to live can bear almost any how.",
-      matchPercentage: 68
-    },
-    {
-      id: "sartre",
-      name: "Jean-Paul Sartre",
-      era: "1905-1980",
-      image: "☕",
-      specialties: ["Existentialism", "Freedom", "Authenticity"],
-      description: "Existentialist philosopher of freedom and choice. Perfect for questions about identity, meaning, and personal responsibility.",
-      keyWorks: ["Being and Nothingness", "Existentialism is a Humanism"],
-      quote: "Man is condemned to be free; because once thrown into the world, he is responsible for everything he does.",
-      matchPercentage: 65
-    }
-  ];
-
+  const { data: philosophers, isLoading, error} = usePhilosophers();
+  if (!philosophers){
+    return<div>Loading</div>;
+  }
   const eras = [
     { id: "all", name: "All Eras" },
     { id: "ancient", name: "Ancient (Before 500 CE)" },
@@ -117,8 +31,8 @@ const ExplorePhilosophers = () => {
     if (year < 1900) return "modern";
     return "contemporary";
   };
-
-  const filteredPhilosophers = philosophers.filter(philosopher => {
+  
+  const filteredPhilosophers = Object.values(philosophers).filter(philosopher => {
     const matchesSearch = philosopher.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          philosopher.specialties.some(s => s.toLowerCase().includes(searchTerm.toLowerCase())) ||
                          philosopher.description.toLowerCase().includes(searchTerm.toLowerCase());
@@ -131,7 +45,6 @@ const ExplorePhilosophers = () => {
   const startConversation = (philosopherId: string) => {
     nav(`/chat/${philosopherId}`);
   };
-
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100">
       {/* Header */}
@@ -209,9 +122,11 @@ const ExplorePhilosophers = () => {
                   {philosopher.era}
                 </CardDescription>
                 <div className="flex items-center justify-center space-x-2 mt-2">
+                    {/*
                   <Badge variant="outline" className="text-xs">
                     {philosopher.matchPercentage}% Match
                   </Badge>
+                  */}
                 </div>
               </CardHeader>
               <CardContent className="space-y-4">
