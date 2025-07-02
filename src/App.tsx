@@ -9,6 +9,7 @@ import PhilosopherMatchPage from "./pages/PhilosopherMatch";
 import ChatPage from "./pages/Chat";
 import ExplorePhilosophersPage from "./pages/ExplorePhilosophersPage";
 import NotFound from "./pages/NotFound";
+import SignUpPage from "./pages/SignUpPage";
 
 const queryClient = new QueryClient();
 
@@ -23,6 +24,7 @@ const App = () => (
           <Route path="/match" element={<PhilosopherMatchPage />} />
           <Route path="/explore" element={<ExplorePhilosophersPage />} />
           <Route path="/chat/:philosopher?" element={<ChatPage />} />
+          <Route path="/auth/signup" element={<SignUpPage/>}/>
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
         </Routes>

@@ -1,0 +1,23 @@
+{
+  "dev": {
+    "awscloudformation": {
+      "AuthRoleName": "amplify-philoai-dev-9d3d3-authRole",
+      "UnauthRoleArn": "arn:aws:iam::809581002818:role/amplify-philoai-dev-9d3d3-unauthRole",
+      "AuthRoleArn": "arn:aws:iam::809581002818:role/amplify-philoai-dev-9d3d3-authRole",
+      "Region": "us-east-1",
+      "DeploymentBucketName": "amplify-philoai-dev-9d3d3-deployment",
+      "UnauthRoleName": "amplify-philoai-dev-9d3d3-unauthRole",
+      "StackName": "amplify-philoai-dev-9d3d3",
+      "StackId": "arn:aws:cloudformation:us-east-1:809581002818:stack/amplify-philoai-dev-9d3d3/a11d5bf0-5788-11f0-9925-0e96212caa6b",
+      "AmplifyAppId": "dsfsij4rg8p5v"
+    },
+    "categories": {
+      "auth": {
+        "philoai3956ad38": {}
+      },
+      "storage": {
+        "userdata": {}
+      }
+    }
+  }
+}
