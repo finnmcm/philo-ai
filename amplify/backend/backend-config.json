@@ -25,11 +25,30 @@
       "service": "Cognito"
     }
   },
+  "parameters": {
+    "AMPLIFY_storage_philoaid6d6047e_bucketName": {
+      "usedBy": [
+        {
+          "category": "storage",
+          "resourceName": "philoaid6d6047e"
+        }
+      ]
+    },
+    "AMPLIFY_storage_philoaid6d6047e_region": {
+      "usedBy": [
+        {
+          "category": "storage",
+          "resourceName": "philoaid6d6047e"
+        }
+      ]
+    }
+  },
   "storage": {
-    "userdata": {
+    "philoaid6d6047e": {
       "dependsOn": [],
       "providerPlugin": "awscloudformation",
-      "service": "S3"
+      "service": "S3",
+      "serviceType": "imported"
     }
   }
 }

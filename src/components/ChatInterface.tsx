@@ -5,93 +5,113 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { BookOpen, Send, Bookmark, User } from "lucide-react";
+import { useAuthenticated, useUserDiscussions, useUserProfile, useCreateDiscussion, useUpdateDiscussion } from "@/hooks/useUserData";
+import { useQueryClient } from "@tanstack/react-query";
+import { fetchAuthSession } from "aws-amplify/auth";
+import { Discussion } from "./api/userStorage";
+import { profile } from "console";
 
-interface Message {
+
+export interface Message {
   id: number;
   text: string;
   sender: 'user' | 'philosopher';
   timestamp: Date;
   isHighlight?: boolean;
 }
+export const PHILOSOPHER_ICONS: Record<string, string> = {
+  aristotle:      '🦉',  // wisdom, Lyceum’s owl
+  kant:           '⚖️',  // moral law / justice
+  mill:           '🗽',  // liberty (Utilitarianism and freedom)
+  nietzsche:      '🐐',  // “God is dead” (the G.O.A.T. of philosophy 😉)
+  confucius:      '🎎',  // traditional East Asian doll
+  epicurus:       '🍇',  // garden of Epicurus
+  plato:          '🏛️',  // Academy / ideal forms
+  socrates:       '🍵',  // hemlock cup
+  stoic:          '🛡️',  // resilience
+  bentham:        '👁️',  // the Panopticon
+  hume:           '🔥',  // “heat of passion” vs. reason
+  locke:          '🔑',  // “social contract” key
+  rousseau:       '🌳',  // “noble savage” in nature
+  voltaire:       '✒️',  // satirical pen
+  spinoza:        '🍷',  // 17th-c. Dutch philosopher
+  descartes:      '💭',  // “I think, therefore I am”
+  hegel:          '🔄',  // dialectical process
+  schopenhauer:   '😔',  // pessimism
+  kierkegaard:    '🐥',  // “knight of faith” (childlike leap)
+  marx:           '✊',  // class struggle
+  sartre:         '🎭',  // existential “play”
+  camus:          '🌅',  // “Sun at noon” of The Myth of Sisyphus
+  foucault:       '🏰',  // institutional power
+  derrida:        '✂️',  // deconstruction
+  wittgenstein:   '🧩',  // language as puzzle
+  russell:        '🕊️',  // peace / logical clarity
+  popper:         '🎯',  // falsifiability target
+  rawls:          '⚖️',  // justice as fairness
+  nozick:         '🕹️',  // libertarian “game”
+  nussbaum:       '📖',  // capability approach stories
+  sen:            '🌐',  // global justice
+  chomsky:        '🗣️',  // language & mind
+  zizek:          '🎬',  // pop-culture critique
+  butler:         '🏳️‍🌈', // gender performativity
+  haraway:        '🐾',  // companion species
+  latour:         '🧪',  // actor-network trials
+  deleuze:        '💫',  // difference & repetition
+  guattari:       '🌋',  // schizoanalytic eruption
+}
 
 const ChatInterface = () => {
-  const { philosopher } = useParams<{ philosopher?: string }>();
+  // All hooks at the top!
+  const { id } = useParams<{ id?: string }>();
+  const currDiscussionId = id || '';
   const location = useLocation();
+  const { isAuthenticated } = useAuthenticated();
+  var { data: userDiscussions, isLoading: discussionsIsLoading, refetch: refetchDiscussions } = useUserDiscussions();
   
-  // Get the current philosopher from URL or default to 'aristotle'
-  const currentPhilosopher = philosopher || 'aristotle';
-  
+  // Convert userDiscussions to array of Discussion objects
+  const safeUserDiscussions = (() => {
+    if (!userDiscussions) return [];
+    if (Array.isArray(userDiscussions)) return userDiscussions;
+    if (typeof userDiscussions === 'object') {
+      // If it's an object, convert to array
+      const discussionsArray = Object.values(userDiscussions);
+      return discussionsArray;
+    }
+    return [];
+  })();
+
+  const createDiscussionMutation = useCreateDiscussion();
+  const updateDiscussionMutation = useUpdateDiscussion();
+  const queryClient = useQueryClient();
   const nav = useNavigate();
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [currentMessage, setCurrentMessage] = useState("");
+  const [discussionType, setDiscussionType] = useState('dilemma');
+
+  const currDiscussion = safeUserDiscussions.find(discussion => discussion.id === currDiscussionId);
+
+  // Get the current philosopher from URL or default to 'aristotle'
   const goToPhilosopherChat = (philosopher: string) => {
     // navigate to "/target-path"
     nav(`/chat/${philosopher}`);
+    setMessages(userDiscussions[currDiscussionId].messages);
   };
+  const goToSignIn = () => {
+    nav('/auth/signin=true')
+  }
 
-  const [messages, setMessages] = useState<Message[]>([
-    /*
-    {
-      id: 1,
-      text: "Greetings, my friend. I understand you're facing a difficult decision between career advancement and family obligations. This is indeed a matter that requires careful consideration of virtue and practical wisdom.",
-      sender: 'philosopher',
-      timestamp: new Date(),
-    },
-    {
-      id: 2,
-      text: "Tell me, what specific aspects of this situation weigh most heavily on your mind? Understanding the particular circumstances will help me guide you toward the most virtuous path.",
-      sender: 'philosopher',
-      timestamp: new Date(),
-    }*/
-  ]);
-  
-  const [currentMessage, setCurrentMessage] = useState("");
-  const [conversations, setConversations] = useState([
-    {
-      id: 1,
-      name: "Aristotle",
-      avatar: "⚖️",
-      lastMessage: "The golden mean between extremes...",
-      timestamp: "2 min ago",
-      unread: 0,
-      isActive: currentPhilosopher === 'aristotle'
-    },
-    {
-      id: 2,
-      name: "Immanuel Kant",
-      avatar: "🏛️",
-      lastMessage: "Act only according to that maxim...",
-      timestamp: "1 hour ago",
-      unread: 2,
-      isActive: currentPhilosopher === 'immanuelkant'
-    },
-    {
-      id: 3,
-      name: "John Stuart Mill",
-      avatar: "🌟",
-      lastMessage: "The greatest happiness principle...",
-      timestamp: "3 hours ago",
-      unread: 0,
-      isActive: currentPhilosopher === 'johnstuartmill'
-    },
-    {
-      id: 4,
-      name: "Confucius",
-      avatar: "🎋",
-      lastMessage: "The superior man is modest...",
-      timestamp: "Yesterday",
-      unread: 1,
-      isActive: currentPhilosopher === 'confucius'
-    },
-    {
-      id: 5,
-      name: "Epicurus",
-      avatar: "🍇",
-      lastMessage: "Pleasure is the beginning and end...",
-      timestamp: "2 days ago",
-      unread: 0,
-      isActive: currentPhilosopher === 'epicurus'
+  // Load messages from current discussion when it changes
+  useEffect(() => {
+    if (currDiscussion) {
+      setMessages(currDiscussion.messages);
+    } else {
+      setMessages([]);
     }
-  ]);
+  }, [currDiscussion]);
 
+  if (discussionsIsLoading) {
+    return <div>Loading...</div>;
+  }
   // Philosopher data mapping
   const philosopherData = {
     aristotle: {
@@ -131,18 +151,7 @@ const ChatInterface = () => {
     }
   };
 
-  // Get current philosopher info or default to Aristotle
-  const philosopherInfo = philosopherData[currentPhilosopher as keyof typeof philosopherData] || philosopherData.aristotle;
-
-  // Update conversations active state when currentPhilosopher changes
-  useEffect(() => {
-    setConversations(prev => prev.map(conv => ({
-      ...conv,
-      isActive: conv.name.toLowerCase().replace(/\s+/g, "") === currentPhilosopher
-    })));
-  }, [currentPhilosopher]);
-
-  const handleSendMessage = () => {
+  const handleSendMessage = async () => {
     if (currentMessage.trim()) {
       const newMessage: Message = {
         id: messages.length + 1,
@@ -151,19 +160,53 @@ const ChatInterface = () => {
         timestamp: new Date()
       };
       
-      setMessages(prev => [...prev, newMessage]);
-      setCurrentMessage("");
-      
-      // Simulate philosopher response
-      setTimeout(() => {
-        const philosopherResponse: Message = {
-          id: messages.length + 2,
-          text: "I see that you are grappling with what I call the tension between personal excellence and our duties to others. This is where the concept of the 'golden mean' becomes particularly relevant...",
-          sender: 'philosopher',
-          timestamp: new Date()
-        };
-        setMessages(prev => [...prev, philosopherResponse]);
-      }, 2000);
+      try {
+        // If no discussion ID exists, generate a new one and navigate to it
+        let discussionIdToUse = currDiscussionId;
+        if (!discussionIdToUse) {
+          discussionIdToUse = crypto.randomUUID();
+          console.log('Generated new discussion ID:', discussionIdToUse);
+          nav(`/chat/${discussionIdToUse}`);
+        }
+        
+        if (safeUserDiscussions.some(d => d.id === discussionIdToUse)) {
+          // Use the mutation to update existing discussion and update cache
+          await updateDiscussionMutation.mutateAsync({ 
+            discussionId: discussionIdToUse, 
+            message: newMessage,
+            currDiscussion: currDiscussion
+          });
+        } else {
+          // Use the mutation to create discussion and update cache
+          console.log('Creating new discussion with discussionType:', discussionType);
+          const newDiscussion = await createDiscussionMutation.mutateAsync({ 
+            discussionId: discussionIdToUse, 
+            message: newMessage ,
+            philosopher: discussionType
+          });
+          
+          // Manually update the local array as a backup
+      /*    if (newDiscussion) {
+            console.log('Manually adding discussion to array:', newDiscussion);
+            // Get the current identity ID from the session
+            const session = await fetchAuthSession();
+            const identityId = session.identityId;
+            
+            if (identityId) {
+              queryClient.setQueryData(['userDiscussions', identityId], (oldData: any) => {
+                const newData = Array.isArray(oldData) ? [...oldData, newDiscussion] : [newDiscussion];
+                console.log('Manual cache update - new data:', newData);
+                return newData;
+              });
+            }
+          }*/
+        }
+        
+      //  setMessages(prev => [...prev, newMessage]);
+        setCurrentMessage("");
+      } catch (err) {
+        console.log("Unable to send message:", err);
+      }
     }
   };
 
@@ -174,8 +217,9 @@ const ChatInterface = () => {
     }
   };
 
-  const formatTime = (date: Date) => {
-    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const formatTime = (date: Date | string) => {
+    const dateObj = typeof date === 'string' ? new Date(date) : date;
+    return dateObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   };
 
   const toggleHighlight = (messageId: number) => {
@@ -202,9 +246,17 @@ const ChatInterface = () => {
               <a href="/explore" className="text-muted-foreground hover:text-primary transition-colors">
                 Explore Philosophers
               </a>
-              <a href="/home" className="text-muted-foreground hover:text-primary transition-colors">
+              <a href="/" className="text-muted-foreground hover:text-primary transition-colors">
                 Home
               </a>
+              {isAuthenticated ? 
+              (<a href="/account" className="text-muted-foreground hover:text-primary transition-colors">
+                My Account
+              </a>) : 
+              (<Button variant="outline" size="sm" onClick={goToSignIn}>
+                Sign In
+              </Button>)
+            }
             </nav>
           </div>
         </div>
@@ -212,70 +264,17 @@ const ChatInterface = () => {
 
       <div className="flex-1 flex">
         {/* Sidebar */}
-        <div className="w-80 bg-white border-r p-6 hidden lg:block">
-          {/* iMessage-like Contacts List */}
-          <div className="mt-6">
-            <h3 className="font-semibold text-lg mb-4 text-primary">Conversations</h3>
-            <div className="space-y-2">
-              {conversations.map((contact) => (
-                <div
-                  key={contact.id}
-                  className={`flex items-center space-x-3 p-3 rounded-lg cursor-pointer transition-colors ${
-                    contact.isActive 
-                      ? 'bg-accent/10 border border-accent/20' 
-                      : 'hover:bg-gray-50'
-                  }`}
-                  onClick={() => goToPhilosopherChat(contact.name.toLowerCase().replace(/\s+/g, ""))}
-                >
-                  <div className="relative">
-                    <div className="text-2xl">{contact.avatar}</div>
-                    {contact.isActive && (
-                      <div className="absolute -bottom-1 -right-1 w-3 h-3 bg-green-500 rounded-full border-2 border-white"></div>
-                    )}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center justify-between">
-                      <h4 className={`font-medium text-sm truncate ${
-                        contact.isActive ? 'text-accent' : 'text-primary'
-                      }`}>
-                        {contact.name}
-                      </h4>
-                      <span className="text-xs text-muted-foreground">
-                        {contact.timestamp}
-                      </span>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <p className="text-xs text-muted-foreground truncate">
-                        {contact.lastMessage}
-                      </p>
-                      {contact.unread > 0 && (
-                        <div className="ml-2 bg-accent text-white text-xs rounded-full w-5 h-5 flex items-center justify-center min-w-[20px]">
-                          {contact.unread}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-            
-            {/* New Conversation Button */}
+        {isAuthenticated ? (
+          <div className="w-80 bg-white border-r p-6 hidden lg:block flex flex-col">
+            {/* New Conversation Button - At top */}
             <Button 
               variant="outline" 
               size="sm" 
-              className="w-full mt-4 justify-start text-accent border-accent/20 hover:bg-accent/5"
+              className="w-full mb-4 justify-start text-accent border-accent/20 hover:bg-accent/5"
               onClick={() => {
-                const newId = Math.max(...conversations.map(c => c.id)) + 1;
-                const newConversation = {
-                  id: newId,
-                  name: "New Discussion",
-                  avatar: "💭",
-                  lastMessage: "Start a new conversation...",
-                  timestamp: "Just now",
-                  unread: 0,
-                  isActive: false
-                };
-                setConversations(prev => [...prev, newConversation]);
+                const newId = crypto.randomUUID();
+                console.log('Navigating to new discussion with ID:', newId);
+                nav(`/chat/${newId}`);
               }}
             >
               <div className="w-6 h-6 rounded-full bg-accent/10 flex items-center justify-center mr-2">
@@ -283,21 +282,71 @@ const ChatInterface = () => {
               </div>
               New Discussion
             </Button>
+            
+            {/* iMessage-like Contacts List */}
+            <div className="flex-1 flex flex-col">
+              <h3 className="font-semibold text-lg mb-4 text-primary">Conversations</h3>
+              <div className="space-y-2 overflow-y-auto pr-2 flex-1" style={{ maxHeight: 'calc(100vh - 200px)' }}>
+              {safeUserDiscussions.map((discussion) => {
+                const isActive = discussion.id === currDiscussionId;
+                const lastMessage = discussion.messages[discussion.messages.length - 1];
+                const timestamp = lastMessage ? formatTime(lastMessage.timestamp) : 'No messages';
+                
+                return (
+                  <div
+                    key={discussion.id}
+                    className={`flex items-center space-x-3 p-3 rounded-lg cursor-pointer transition-colors ${
+                      isActive 
+                        ? 'bg-accent/10 border border-accent/20' 
+                        : 'hover:bg-gray-50'
+                    }`}
+                    onClick={() => goToPhilosopherChat(discussion.id)}
+                  >
+                    <div className="relative">
+                      <div className="text-2xl">{/*userDiscussions[currDiscussionId].philosopherId == "" ? "💭" : PHILOSOPHER_ICONS[userDiscussions[currDiscussionId].philosopherId]*/}</div>
+                      {isActive && (
+                        <div className="absolute -bottom-1 -right-1 w-3 h-3 bg-green-500 rounded-full border-2 border-white"></div>
+                      )}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between">
+                        <h4 className={`font-medium text-sm truncate ${
+                          isActive ? 'text-accent' : 'text-primary'
+                        }`}>
+                          {discussion.title || 'New Discussion'}
+                        </h4>
+                        <span className="text-xs text-muted-foreground">
+                          {timestamp}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <p className="text-xs text-muted-foreground truncate">
+                          {lastMessage ? lastMessage.text : 'Start a new conversation...'}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           </div>
         </div>
-
+        ) : <></>}
         {/* Main Chat Area */}
         <div className="flex-1 flex flex-col">
           {/* Chat Header */}
-          <div className="bg-white border-b p-4 lg:hidden">
+          {currDiscussion ? (
+            <div className="bg-white border-b p-4 lg:hidden">
             <div className="flex items-center space-x-3">
-              <div className="text-2xl">{philosopherInfo.image}</div>
+              <div className="text-2xl">{currDiscussion.image}</div>
               <div>
-                <h3 className="font-bold">{philosopherInfo.name}</h3>
-                <p className="text-sm text-muted-foreground">{philosopherInfo.onlineStatus}</p>
+                <h3 className="font-bold">{currDiscussion.name}</h3>
+                <p className="text-sm text-muted-foreground">{currDiscussion.onlineStatus}</p>
               </div>
             </div>
           </div>
+          ) : <></>}
+        
 
           {/* Messages */}
           <div className="flex-1 overflow-y-auto p-4 space-y-4">
@@ -311,42 +360,26 @@ const ChatInterface = () => {
                   
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                     {[
-                      { name: "Aristotle", avatar: "⚖️", id: "aristotle" },
-                      { name: "Kant", avatar: "🏛️", id: "kant" },
-                      { name: "Mill", avatar: "🌟", id: "mill" },
-                      { name: "Nietzsche", avatar: "🎋", id: "nietzsche" }
+                      { name: "Aristotle", avatar: "🦉", id: "aristotle" },
+                      { name: "Kant", avatar: "⚖️", id: "kant" },
+                      { name: "Mill", avatar: "🗽", id: "mill" },
+                      { name: "Nietzsche", avatar: "🐐", id: "nietzsche" }
                     ].map((philosopher) => (
                       <Button
                         key={philosopher.id}
                         variant="outline"
                         size="sm"
-                        className="flex flex-col items-center p-4 h-auto space-y-2 hover:bg-accent/5"
+                        className={`flex flex-col items-center p-4 h-auto space-y-2 hover:bg-accent/5 ${
+                          discussionType === philosopher.id 
+                            ? 'bg-accent/10 border-accent text-accent' 
+                            : ''
+                        }`}
                         onClick={() => {
-                          // Check if conversation already exists
-                          const existingConversation = conversations.find(conv => 
-                            conv.name.toLowerCase().replace(/\s+/g, "") === philosopher.id
-                          );
-                          
-                          if (existingConversation) {
-                            // Navigate to existing conversation
-                            goToPhilosopherChat(philosopher.id);
-                          } else {
-                            // Update current conversation with new philosopher
-                            const philosopherData = {
-                              aristotle: { name: "Aristotle", avatar: "⚖️" },
-                              kant: { name: "Immanuel Kant", avatar: "🏛️" },
-                              mill: { name: "John Stuart Mill", avatar: "🌟" },
-                              confucius: { name: "Confucius", avatar: "🎋" }
-                            };
-                            
-                            const newPhilosopher = philosopherData[philosopher.id as keyof typeof philosopherData];
-                            
-                            // Update conversations list to highlight the new philosopher
-                            setConversations(prev => prev.map(conv => ({
-                              ...conv,
-                              isActive: conv.name === newPhilosopher.name
-                            })));
-                          }
+                          console.log('Philosopher button clicked:', philosopher.id);
+                          console.log('Current discussionType:', discussionType);
+                          const newType = discussionType === philosopher.id ? 'dilemma' : philosopher.id;
+                          console.log('Setting discussionType to:', newType);
+                          setDiscussionType(newType);
                         }}
                       >
                         <div className="text-2xl">{philosopher.avatar}</div>

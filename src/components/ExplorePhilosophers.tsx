@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Search, MessageSquare, BookOpen, Filter } from "lucide-react";
 import { usePhilosophers } from "../hooks/usePhilosophers";
+import { useAuthenticated } from "@/hooks/useUserData";
 
 
 const ExplorePhilosophers = () => {
@@ -13,6 +14,12 @@ const ExplorePhilosophers = () => {
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedEra, setSelectedEra] = useState("all");
   const { data: philosophers, isLoading, error} = usePhilosophers();
+  const {isAuthenticated} = useAuthenticated();
+  const navigate = useNavigate();
+  const goToSignIn = () => {
+    navigate("/auth=signin");
+  }
+
   if (!philosophers){
     return<div>Loading</div>;
   }
@@ -63,9 +70,14 @@ const ExplorePhilosophers = () => {
               <a href="/" className="text-muted-foreground hover:text-primary transition-colors">
                 Home
               </a>
-              <Button variant="outline" size="sm">
+              {isAuthenticated ? 
+              (<a href="/account" className="text-muted-foreground hover:text-primary transition-colors">
+                My Account
+              </a>) : 
+              (<Button variant="outline" size="sm" onClick={goToSignIn}>
                 Sign In
-              </Button>
+              </Button>)
+            }
             </nav>
           </div>
           

@@ -1,3 +1,4 @@
+from socket import IP_DEFAULT_MULTICAST_LOOP
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 import boto3
@@ -48,7 +49,81 @@ def upload_file():
             return jsonify(error="s3 access denied"), 403
         raise        # unknown error → 500 (but still with CORS header)
     
-@app.route("/api/get/folder", methods=["GET"])
+@app.route("/api/get/users/", methods=["GET"])
+def get_user_profile():
+    id = request.args.get('id')
+    if not id:
+        return jsonify({"error": "required id param"}), 400
+
+    key = f"private/{id}/users/{id}/profile.json"
+    print(f"Looking for key: {key}")
+    try:
+        # List objects under prefix
+        resp = s3.get_object(Bucket=BUCKET, Key=key)
+        body = resp["Body"].read().decode("utf-8")
+        data = json.loads(body)
+        print(jsonify({"results": data}))
+        return jsonify({"results": data})
+    except ClientError as e:
+        print(f"S3 error: {e}")
+        # Let's see what's actually in the bucket
+        try:
+            list_resp = s3.list_objects_v2(Bucket=BUCKET, Prefix="private/")
+            if 'Contents' in list_resp:
+                print("Found objects in bucket:")
+                for obj in list_resp['Contents']:
+                    print(f"  {obj['Key']}")
+            else:
+                print("No objects found with 'private/' prefix")
+        except Exception as list_error:
+            print(f"Error listing bucket: {list_error}")
+        return jsonify({"error": "fetching json error"}), 500
+
+@app.route("/api/get/discussions/", methods=["GET"])
+def get_user_discussions():
+    id = request.args.get('id')
+    if not id:
+        return jsonify({"error": "required id param"}), 400
+
+    key = f"private/{id}/discussions/{id}"
+    
+    try:
+        # List objects under prefix
+        resp = s3.list_objects_v2(Bucket=BUCKET, Prefix=key)
+    except ClientError as e:
+        app.logger.error(f"ListObjects error: {e}")
+        return jsonify({"error": "listing objects error"}), 500
+
+    contents = resp.get('Contents')
+    if not contents:
+        return jsonify({"error":"No objects found under key '{key}'"}), 404
+
+    results = {}
+    for obj in contents:
+        key = obj['Key']
+        # Only JSON files
+        if not key.lower().endswith('.json'):
+            continue
+        try:
+            s3_resp = s3.get_object(Bucket=BUCKET, Key=key)
+            body = s3_resp['Body'].read().decode('utf-8')
+            data = json.loads(body)
+        except ClientError as e:
+            app.logger.warning(f"Could not generate URL for {key}: {e}")
+        except json.JSONDecodeError as e:
+            app.logger.warning(f"Invalid JSON in {key}: {e}")
+            continue
+        filename = os.path.basename(key)
+        filename = filename.replace(".json", "")
+        results[filename] = data
+
+    if not results:
+        return jsonify({"error":"No JSON files found under that prefix"}), 404
+    
+    print(jsonify({"urls":results}))
+    return jsonify({"results": results})
+
+@app.route("/api/get/folder/", methods=["GET"])
 def get_folder():
     prefix = request.args.get('prefix')
     if not prefix:

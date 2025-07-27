@@ -16,7 +16,10 @@
         "philoai3956ad38": {}
       },
       "storage": {
-        "userdata": {}
+        "philoaid6d6047e": {
+          "bucketName": "philo-ai",
+          "region": "us-east-1"
+        }
       }
     }
   }

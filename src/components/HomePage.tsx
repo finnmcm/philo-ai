@@ -1,14 +1,29 @@
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { useAuthenticated } from "@/hooks/useUserData";
 import { ArrowRight, BookOpen, Users, MessageSquare } from "lucide-react";
 import { useNavigate } from 'react-router-dom'
 
 const HomePage = () => {
   const nav = useNavigate();
+  const {isAuthenticated} = useAuthenticated();
+  console.log(isAuthenticated);
   const goToDilemma = () => {
     // navigate to "/target-path"
     nav('/chat');
+  };
+  const goToAccount = () => {
+    // navigate to "/target-path"
+    nav('/account');
+  };
+  const goToAuth = () => {
+    // navigate to "/target-path"
+    nav('/auth/signin=true');
+  };
+  const handleNewChat = () => {
+    const newId = crypto.randomUUID();
+    nav(`/chat/?id=${newId}`);
   };
   const featuredPhilosophers = [
     {
@@ -55,15 +70,27 @@ const HomePage = () => {
               <h1 className="text-2xl font-bold text-primary">PhiloAI</h1>
             </div>
             <nav className="hidden md:flex items-center space-x-6">
-            <a href="/chat" className="text-muted-foreground hover:text-primary transition-colors">
+            <a 
+            href="#" onClick={e => {
+              e.preventDefault();
+              handleNewChat();
+            }}
+            className="text-muted-foreground hover:text-primary transition-colors">
                 Chat
               </a>
               <a href="/explore" className="text-muted-foreground hover:text-primary transition-colors">
                 Explore Philosophers
               </a>
-              <Button variant="outline" size="sm">
-                Sign In
-              </Button>
+              {isAuthenticated ?  
+              (<a href="/account" className="text-muted-foreground hover:text-primary transition-colors">
+                My Account
+              </a>)
+              : 
+              (<Button 
+                onClick={goToAuth} variant="outline" size="sm" >
+                  Sign In
+                </Button>)
+              }
             </nav>
           </div>
         </div>
