@@ -1,4 +1,5 @@
 
+import select
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 import boto3
@@ -234,7 +235,7 @@ def save_user_profile():
         app.logger.error(f"S3 error: {e}")
         return jsonify({"error": "Failed to save profile"}), 500
 
-@app.route("/api/discussions/", methods=["POST", "PUT"])
+@app.route("/api/discussions/match/", methods=["POST", "PUT"])
 def save_discussion():
     try:
         data = request.get_json(force=True, silent=True)
@@ -273,31 +274,36 @@ def save_discussion():
         ])
         
         selection_prompt = f"""
-    A user has presented the following moral dilemma or philosophical question:
-    
-    "{user_input}"
-    
-    Available philosophers:
-    {philosopher_list}
-    
-    Select the MOST appropriate philosopher to address this dilemma.
-    Consider their specialties, approach, and relevance to the issue.
-    
-    You MUST respond with ONLY a valid JSON object in this exact format:
-    {{"philosopher_id": "choose_one_id", "reasoning": "brief explanation", "initial_response": "2-3 sentences in philosopher's voice"}}
-    
-    The philosopher_id MUST be one of: {', '.join(PHILOSOPHERS.keys())}
-    
-    Respond with ONLY the JSON object, no other text.
-    """
+You are a philosophical advisor. A user has presented: "{user_input}"
+
+Available philosophers:
+{philosopher_list}
+
+Select the MOST appropriate philosopher. Respond with ONLY valid JSON in this exact format:
+{{"philosopher_id": "choose_one_id", "reasoning": "brief explanation", "initial_response": "3-4 sentences in philosopher's voice. Use simple language and avoid complex words."}}
+
+The philosopher_id MUST be one of: {', '.join(PHILOSOPHERS.keys())}
+
+Respond with ONLY the JSON object, no other text.
+"""
         
         
         try:
+            response = client.chat.completions.create(
+            model="gpt-3.5-turbo",
+            messages=[
+                {"role": "system", "content": "You are a philosophical advisor. Respond with ONLY valid JSON in the exact format requested."},
+                {"role": "user", "content": selection_prompt}
+            ],
+            temperature=0.3,
+            max_tokens=200
+        )
+            # Validate response structure
+            if not response.choices or len(response.choices) == 0:
+                return jsonify({"error": "OpenAI returned no choices"}), 500
             
-            response = client.responses.create(
-    model="gpt-5",
-    input="Write a one-sentence bedtime story about a unicorn."
-)
+            if not response.choices[0].message or not response.choices[0].message.content:
+                return jsonify({"error": "OpenAI returned empty message content"}), 500
         
             
         except Exception as openai_error:
@@ -316,6 +322,8 @@ def save_discussion():
                 return jsonify({"error": f"OpenAI API error: {str(openai_error)}"}), 500
         
         content = response.choices[0].message.content.strip()
+        print(f"Raw OpenAI response content: {content}")
+        
         # Remove any markdown code blocks if present
         if content.startswith("```"):
             content = content.split("```")[1]
@@ -324,8 +332,33 @@ def save_discussion():
             content = content.split("```")[0]
         content = content.strip()
         
-        result = json.loads(content)
+        print(f"Processed content: {content}")
+        
+        # Validate that content is not empty
+        if not content:
+            return jsonify({"error": "OpenAI returned empty response"}), 500
+        
+        try:
+            result = json.loads(content)
+        except json.JSONDecodeError as json_error:
+            print(f"JSON decode error: {json_error}")
+            print(f"Content that failed to parse: {repr(content)}")
+            return jsonify({"error": f"Failed to parse OpenAI response as JSON: {str(json_error)}"}), 500
+        
+        # Validate the JSON structure
+        required_fields = ['philosopher_id', 'reasoning', 'initial_response']
+        missing_fields = [field for field in required_fields if field not in result]
+        if missing_fields:
+            return jsonify({"error": f"OpenAI response missing required fields: {missing_fields}"}), 500
+        
         philosopher_id = result['philosopher_id']
+        
+        # Validate philosopher_id is valid
+        if philosopher_id not in PHILOSOPHERS:
+            return jsonify({"error": f"Invalid philosopher_id: {philosopher_id}"}), 500
+        
+        print(f"Selected philosopher: {philosopher_id}")
+        print(f"Philosopher details: {PHILOSOPHERS[philosopher_id]}")
         
         # Use the provided discussion ID if available, otherwise generate a new one
         conversation_id = data.get('discussionId') or str(uuid.uuid4())
@@ -344,6 +377,13 @@ def save_discussion():
                 },
                 {
                     'id': 2,
+                    'text': f"You've been matched with {PHILOSOPHERS[philosopher_id]['name']}!",
+                    'sender': 'system',
+                    'timestamp': datetime.now(),
+                    'type': 'philosopher_match'
+                },
+                {
+                    'id': 3,
                     'text': result['initial_response'],
                     'sender': 'philosopher',
                     'timestamp': datetime.now()
@@ -395,6 +435,184 @@ def save_discussion():
         else:
             return jsonify({"error": f"Failed to process discussion: {str(e)}"}), 500
 
+@app.route("/api/discussions/continue/", methods=["POST", "PUT"])
+def continue_discussion():
+    try:
+        data = request.get_json(force=True, silent=True)
+        print(f"Received data for continue_discussion: {data}")
+
+        if not data:
+            return jsonify({"error": "No data received"}), 400
+
+        # Required fields: user_id, discussionId, messages, philosopher_id
+        user_id = data.get("user_id")
+        discussion_id = data.get("discussionId")
+        messages = data.get("messages")
+        philosopher_id = data.get("philosopher_id")
+
+        if not user_id:
+            return jsonify({"error": "No user_id provided"}), 400
+        if not discussion_id:
+            return jsonify({"error": "No discussionId provided"}), 400
+        if not messages or not isinstance(messages, list) or len(messages) == 0:
+            return jsonify({"error": "No messages provided"}), 400
+        if not philosopher_id or philosopher_id not in PHILOSOPHERS:
+            return jsonify({"error": "Invalid or missing philosopher_id"}), 400
+            
+        # Validate that there's at least one user message
+        user_messages = [msg for msg in messages if msg.get("sender") == "user"]
+        if not user_messages:
+            return jsonify({"error": "No user messages found in the discussion"}), 400
+            
+        print(f"Found {len(user_messages)} user messages out of {len(messages)} total messages")
+
+        # Get the philosopher's persona
+        philosopher = PHILOSOPHERS[philosopher_id]
+        philosopher_name = philosopher["name"]
+        philosopher_style = philosopher.get("style", "")
+        philosopher_specialties = ", ".join(philosopher.get("specialties", []))
+        
+        # For ongoing discussions, examine the context of the conversation
+        is_philosophical, reason = is_philosophy_related(messages, is_ongoing_discussion=True)
+        if not is_philosophical:
+            return jsonify({
+                'error': 'Input not related to philosophy',
+                'reason': reason
+            }), 400
+            
+        # Prepare the last 5 messages for context (oldest to newest)
+        context_messages = messages[-5:] if len(messages) > 5 else messages
+        print(f"Total messages received: {len(messages)}")
+        print(f"Context messages (last 5): {len(context_messages)}")
+        print(f"Context messages: {context_messages}")
+
+        # Build OpenAI chat history
+        openai_messages = [
+            {
+                "role": "system",
+                "content": (
+                    f"You are {philosopher_name}, a famous philosopher. "
+                    f"Your style: {philosopher_style}. "
+                    f"Your specialties: {philosopher_specialties}. "
+                    "Respond in the first person, in your own voice, and keep your answer to 3-4 sentences. "
+                    "Use simple language and avoid complex words. "
+                    "Do not mention that you are an AI or language model."
+                )
+            }
+        ]
+
+        # Add the last 5 messages as alternating user/assistant
+        for msg in context_messages:
+            if msg.get("sender") == "user":
+                openai_messages.append({
+                    "role": "user",
+                    "content": msg.get("text", "")
+                })
+            elif msg.get("sender") == "philosopher":
+                openai_messages.append({
+                    "role": "assistant",
+                    "content": msg.get("text", "")
+                })
+            elif msg.get("sender") == "system":
+                # Optionally skip or treat as assistant
+                continue
+
+        # The most recent message is assumed to be from the user
+        latest_message = context_messages[-1]
+        print(f"Latest message in context: {latest_message}")
+        print(f"Latest message sender: {latest_message.get('sender')}")
+        
+        if latest_message.get("sender") != "user":
+            print(f"Error: Latest message is not from user. Sender: {latest_message.get('sender')}")
+            print(f"All context messages: {context_messages}")
+            return jsonify({"error": "The most recent message must be from the user."}), 400
+
+        print(f"OpenAI prompt messages: {openai_messages}")
+
+        # Call OpenAI to get the philosopher's response
+        try:
+            response = client.chat.completions.create(
+                model="gpt-3.5-turbo",
+                messages=openai_messages,
+                temperature=0.3,
+                max_tokens=200
+            )
+            if not response.choices or len(response.choices) == 0:
+                return jsonify({"error": "OpenAI returned no choices"}), 500
+            if not response.choices[0].message or not response.choices[0].message.content:
+                return jsonify({"error": "OpenAI returned empty message content"}), 500
+        except Exception as openai_error:
+            print(f"OpenAI API error: {openai_error}")
+            import traceback
+            traceback.print_exc()
+            if "authentication" in str(openai_error).lower() or "401" in str(openai_error):
+                return jsonify({"error": "OpenAI API authentication failed. Please check your API key."}), 500
+            elif "quota" in str(openai_error).lower() or "429" in str(openai_error):
+                return jsonify({"error": "OpenAI API quota exceeded. Please try again later."}), 500
+            elif "rate_limit" in str(openai_error).lower():
+                return jsonify({"error": "OpenAI API rate limit exceeded. Please try again later."}), 500
+            else:
+                return jsonify({"error": f"OpenAI API error: {str(openai_error)}"}), 500
+
+        ai_response = response.choices[0].message.content.strip()
+        print(f"Philosopher ({philosopher_name}) response: {ai_response}")
+
+        # Add the AI's response to the conversation
+        new_message = {
+            "id": len(messages) + 1,
+            "text": ai_response,
+            "sender": "philosopher",
+            "timestamp": datetime.now().isoformat(),
+            "type": "philosopher_response"
+        }
+        updated_messages = messages + [new_message]
+
+        # Build updated conversation object
+        conversation_data = {
+            "id": discussion_id,
+            "philosopherId": philosopher_id,
+            "philosopherName": philosopher_name,
+            "messages": updated_messages,
+            "createdAt": data.get("createdAt") or datetime.now().isoformat(),
+            "updatedAt": datetime.now().isoformat(),
+            "title": updated_messages[0]["text"][:50] + "..." if len(updated_messages[0]["text"]) > 50 else updated_messages[0]["text"],
+            "hasPhilosopherMatch": True
+        }
+
+        # Save updated conversation to S3
+        key = f"private/{user_id}/discussions/{discussion_id}.json"
+        try:
+            s3.put_object(
+                Bucket=BUCKET,
+                Key=key,
+                Body=json.dumps(conversation_data, default=str),
+                ContentType='application/json'
+            )
+        except Exception as s3_error:
+            print(f"S3 error: {s3_error}")
+            return jsonify({"error": "Failed to save updated discussion to S3"}), 500
+
+        return jsonify({
+            "discussion": conversation_data,
+            "philosopher": philosopher,
+            "philosopher_id": philosopher_id,
+            "key": key
+        })
+
+    except Exception as e:
+        print(f"Error in continue_discussion: {e}")
+        import traceback
+        traceback.print_exc()
+        if "OPENAI_API_KEY" in str(e) or "authentication" in str(e).lower():
+            return jsonify({"error": "OpenAI API authentication failed. Please check your API key."}), 500
+        elif "boto3" in str(e) or "aws" in str(e).lower():
+            return jsonify({"error": "AWS S3 error. Please check your AWS credentials and bucket configuration."}), 500
+        elif "json" in str(e).lower():
+            return jsonify({"error": f"JSON parsing error: {str(e)}"}), 500
+        elif "openai" in str(e).lower():
+            return jsonify({"error": f"OpenAI API error: {str(e)}"}), 500
+        else:
+            return jsonify({"error": f"Failed to process discussion: {str(e)}"}), 500
     
 @app.route("/api/get/users/", methods=["GET"])
 def get_user_profile():
@@ -521,26 +739,86 @@ def get_folder():
 def serve(path):
     return app.send_static_file("index.html")
 
-def is_philosophy_related(text: str) -> tuple[bool, str]:
-    prompt = f"""
-    Determine if the following text is related to philosophy, ethics, morality, or seeking philosophical guidance.
+def is_philosophy_related(text_or_messages, is_ongoing_discussion=False) -> tuple[bool, str]:
+    """
+    Determine if text or conversation is related to philosophy, ethics, morality, or seeking philosophical guidance.
     
-    Text: "{text}"
+    Args:
+        text_or_messages: Either a string (for new discussions) or a list of messages (for ongoing discussions)
+        is_ongoing_discussion: Boolean indicating if this is an ongoing discussion with context
     
-    You MUST respond with ONLY a valid JSON object in this exact format:
-    {{"is_philosophical": true, "reason": "brief explanation here"}}
-    
-    Be lenient with personal dilemmas, ethical questions, life decisions, meaning, purpose, or moral conflicts.
-    Reject only if clearly unrelated (e.g., technical support, recipes, weather, etc.)
-    
-    Respond with ONLY the JSON object, no other text.
+    Returns:
+        tuple[bool, str]: (is_philosophical, reason)
     """
     
+    if is_ongoing_discussion and isinstance(text_or_messages, list):
+        # For ongoing discussions, examine the context of the last 5 messages
+        if not text_or_messages:
+            print("Warning: Empty messages list provided for ongoing discussion")
+            return True, "Empty conversation, allowing by default"
+            
+        messages = text_or_messages[-5:] if len(text_or_messages) > 5 else text_or_messages
+        
+        # Build conversation context
+        conversation_context = ""
+        for i, msg in enumerate(messages):
+            sender = msg.get("sender", "unknown")
+            text = msg.get("text", "")
+            conversation_context += f"Message {i+1} ({sender}): {text}\n"
+        
+        prompt = f"""
+        Determine if this ongoing conversation is related to philosophy, ethics, morality, or seeking philosophical guidance.
+        
+        Conversation context (last 5 messages):
+        {conversation_context}
+        
+        Consider the overall flow and context of the conversation, not just individual messages.
+        Be lenient with personal dilemmas, ethical questions, life decisions, meaning, purpose, or moral conflicts.
+        Reject only if clearly unrelated (e.g., technical support, recipes, weather, etc.)
+        
+        You MUST respond with ONLY a valid JSON object in this exact format:
+        {{"is_philosophical": true, "reason": "brief explanation here"}}
+        
+        Respond with ONLY the JSON object, no other text.
+        """
+    else:
+        # For new discussions, just evaluate the single message
+        text = text_or_messages if isinstance(text_or_messages, str) else str(text_or_messages)
+        
+        if not text or text.strip() == "":
+            print("Warning: Empty text provided for new discussion")
+            return True, "Empty text, allowing by default"
+        
+        prompt = f"""
+        Determine if the following text is related to philosophy, ethics, morality, or seeking philosophical guidance.
+        
+        Text: "{text}"
+        
+        You MUST respond with ONLY a valid JSON object in this exact format:
+        {{"is_philosophical": true, "reason": "brief explanation here"}}
+        
+        Be lenient with personal dilemmas, ethical questions, life decisions, meaning, purpose, or moral conflicts.
+        Reject only if clearly unrelated (e.g., technical support, recipes, weather, etc.)
+        
+        Respond with ONLY the JSON object, no other text.
+        """
+    
     try:
-        response = client.responses.create(
-            model="gpt-5-mini",
-            input=prompt
-)
+        print(f"Calling is_philosophy_related with is_ongoing_discussion={is_ongoing_discussion}")
+        if is_ongoing_discussion:
+            print(f"Examining conversation context with {len(text_or_messages)} messages")
+        else:
+            print(f"Examining single text: {text_or_messages[:100]}...")
+            
+        response = client.chat.completions.create(
+            model="gpt-3.5-turbo",
+            messages=[
+                {"role": "system", "content": "You are a philosophical content validator. Respond with ONLY valid JSON in the exact format requested."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.3,
+            max_tokens=200
+        )
         
         # Clean the response and parse JSON
         content = response.choices[0].message.content.strip()
@@ -549,13 +827,20 @@ def is_philosophy_related(text: str) -> tuple[bool, str]:
             content = content.split("```")[1]
             if content.startswith("json"):
                 content = content[4:]
+            content = content.split("```")[0]
         content = content.strip()
-        print(f"Content: {content}")
+        print(f"Philosophy validation response: {content}")
         result = json.loads(content)
-        return result["is_philosophical"], result.get("reason", "")
+        is_philosophical = result["is_philosophical"]
+        reason = result.get("reason", "")
+        print(f"Philosophy validation result: {is_philosophical}, reason: {reason}")
+        return is_philosophical, reason
     except Exception as e:
         # If validation fails, be conservative and allow it
         print(f"Philosophy validation error: {e}")
+        print(f"Error type: {type(e)}")
+        import traceback
+        traceback.print_exc()
         return True, "Validation check failed, allowing by default"
     
 if __name__ == "__main__":
