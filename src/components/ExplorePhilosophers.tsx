@@ -13,26 +13,62 @@ const ExplorePhilosophers = () => {
   const nav = useNavigate();
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedEra, setSelectedEra] = useState("all");
-  const { data: philosophers, isLoading, error} = usePhilosophers();
+  const { data: philosophers, isLoading, error, refetch } = usePhilosophers();
+  
+  // Debug: Log the raw hook response
+  console.log('usePhilosophers hook response:', { philosophers, isLoading, error });
   const {isAuthenticated} = useAuthenticated();
   const navigate = useNavigate();
   const goToSignIn = () => {
     navigate("/auth=signin");
   }
 
-  if (!philosophers){
-    return<div>Loading</div>;
+  if (isLoading) {
+    return <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 flex items-center justify-center">
+      <div className="text-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
+        <p className="text-lg text-muted-foreground">Loading philosophers...</p>
+      </div>
+    </div>;
   }
+
+  if (error) {
+    return <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 flex items-center justify-center">
+      <div className="text-center">
+        <p className="text-lg text-red-600 mb-4">Error loading philosophers</p>
+        <p className="text-muted-foreground">{error.message}</p>
+      </div>
+    </div>;
+  }
+
+  if (!philosophers || Object.keys(philosophers).length === 0) {
+    return <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 flex items-center justify-center">
+      <div className="text-center">
+        <p className="text-lg text-muted-foreground">No philosophers found</p>
+      </div>
+    </div>;
+  }
+
+  // Debug logging to help identify data structure issues
+  console.log('Philosophers data:', philosophers);
+  console.log('Philosophers type:', typeof philosophers);
+  console.log('Philosophers keys:', Object.keys(philosophers));
+  console.log('Philosophers length:', Object.keys(philosophers).length);
+  console.log('First philosopher sample:', Object.values(philosophers)[0]);
+  console.log('Is philosophers empty?', !philosophers || Object.keys(philosophers).length === 0);
   const eras = [
     { id: "all", name: "All Eras" },
     { id: "ancient", name: "Ancient (Before 500 CE)" },
     { id: "medieval", name: "Medieval (500-1500)" },
     { id: "modern", name: "Modern (1500-1900)" },
-    { id: "contemporary", name: "Contemporary (1900+)" }
+    { id: "contemporary", name: "Contemporary (1900+)" },
+    { id: "unknown", name: "Unknown Era" }
   ];
 
   const getEraCategory = (era: string) => {
+    if (!era || typeof era !== 'string') return "unknown";
     const year = parseInt(era.split(" ")[0]);
+    if (isNaN(year)) return "unknown";
     if (year < 500) return "ancient";
     if (year < 1500) return "medieval";
     if (year < 1900) return "modern";
@@ -40,8 +76,13 @@ const ExplorePhilosophers = () => {
   };
   
   const filteredPhilosophers = Object.values(philosophers).filter(philosopher => {
+    // Safety checks for required properties
+    if (!philosopher || !philosopher.name || !philosopher.specialties || !philosopher.description || !philosopher.era) {
+      return false;
+    }
+    
     const matchesSearch = philosopher.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         philosopher.specialties.some(s => s.toLowerCase().includes(searchTerm.toLowerCase())) ||
+                         philosopher.specialties.some(s => s && s.toLowerCase().includes(searchTerm.toLowerCase())) ||
                          philosopher.description.toLowerCase().includes(searchTerm.toLowerCase());
     
     const matchesEra = selectedEra === "all" || getEraCategory(philosopher.era) === selectedEra;
@@ -53,9 +94,9 @@ const ExplorePhilosophers = () => {
     nav(`/chat/${philosopherId}`);
   };
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100">
+    <div className="bg-gradient-to-br from-gray-50 to-gray-100">
       {/* Header */}
-      <header className="border-b bg-white/80 backdrop-blur-sm">
+      <header className="border-b bg-white/80 backdrop-blur-sm sticky top-0 z-50">
         <div className="container mx-auto px-4 py-4">
           <div className="flex items-center justify-between">
           <div className="flex items-center space-x-2" onClick={() => nav('/')}>
@@ -95,28 +136,39 @@ const ExplorePhilosophers = () => {
 
         {/* Search and Filter */}
         <div className="mb-8 space-y-4">
-          <div className="flex flex-col md:flex-row gap-4">
-            <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
-              <Input
-                placeholder="Search philosophers, specialties, or topics..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-10"
-              />
+          <div className="flex flex-col md:flex-row gap-4 items-center justify-between">
+            <div className="flex flex-col md:flex-row gap-4 flex-1">
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
+                <Input
+                  placeholder="Search philosophers, specialties, or topics..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="pl-10"
+                />
+              </div>
+              <div className="flex items-center space-x-2">
+                <Filter className="h-4 w-4 text-muted-foreground" />
+                <select
+                  value={selectedEra}
+                  onChange={(e) => setSelectedEra(e.target.value)}
+                  className="px-3 py-2 border rounded-md bg-white"
+                >
+                  {eras.map(era => (
+                    <option key={era.id} value={era.id}>{era.name}</option>
+                  ))}
+                </select>
+              </div>
             </div>
-            <div className="flex items-center space-x-2">
-              <Filter className="h-4 w-4 text-muted-foreground" />
-              <select
-                value={selectedEra}
-                onChange={(e) => setSelectedEra(e.target.value)}
-                className="px-3 py-2 border rounded-md bg-white"
-              >
-                {eras.map(era => (
-                  <option key={era.id} value={era.id}>{era.name}</option>
-                ))}
-              </select>
-            </div>
+            <Button 
+              onClick={() => refetch()} 
+              variant="outline" 
+              size="sm"
+              className="flex items-center space-x-2"
+            >
+              <Search className="h-4 w-4" />
+              Refresh Data
+            </Button>
           </div>
           <p className="text-sm text-muted-foreground">
             {filteredPhilosophers.length} philosopher{filteredPhilosophers.length !== 1 ? 's' : ''} found
@@ -128,7 +180,7 @@ const ExplorePhilosophers = () => {
           {filteredPhilosophers.map((philosopher) => (
             <Card key={philosopher.id} className="hover:shadow-lg transition-shadow duration-300 group">
               <CardHeader className="text-center pb-4">
-                <div className="text-5xl mb-3">{philosopher.image}</div>
+                <div className="text-5xl mb-3">{philosopher.image || "🧠"}</div>
                 <CardTitle className="text-xl">{philosopher.name}</CardTitle>
                 <CardDescription className="font-medium text-accent">
                   {philosopher.era}
@@ -145,11 +197,14 @@ const ExplorePhilosophers = () => {
                 <div>
                   <h4 className="font-semibold mb-2">Specialties</h4>
                   <div className="flex flex-wrap gap-1">
-                    {philosopher.specialties.map((specialty, index) => (
-                      <Badge key={index} variant="secondary" className="text-xs">
-                        {specialty}
-                      </Badge>
-                    ))}
+                    {philosopher.specialties && Array.isArray(philosopher.specialties) 
+                      ? philosopher.specialties.map((specialty, index) => (
+                          <Badge key={index} variant="secondary" className="text-xs">
+                            {specialty}
+                          </Badge>
+                        ))
+                      : <Badge variant="secondary" className="text-xs">No specialties listed</Badge>
+                    }
                   </div>
                 </div>
                 
@@ -160,13 +215,17 @@ const ExplorePhilosophers = () => {
                 <div>
                   <h4 className="font-semibold mb-2 text-sm">Key Works</h4>
                   <p className="text-xs text-muted-foreground">
-                    {philosopher.keyWorks.join(", ")}
+                    {philosopher.keyWorks && Array.isArray(philosopher.keyWorks) 
+                      ? philosopher.keyWorks.join(", ") 
+                      : "No key works listed"}
                   </p>
                 </div>
                 
-                <blockquote className="text-sm italic text-muted-foreground border-l-2 border-accent/30 pl-3">
-                  "{philosopher.quote}"
-                </blockquote>
+                {philosopher.quote && (
+                  <blockquote className="text-sm italic text-muted-foreground border-l-2 border-accent/30 pl-3">
+                    "{philosopher.quote}"
+                  </blockquote>
+                )}
                 
                 <Button 
                   onClick={() => startConversation(philosopher.id)}

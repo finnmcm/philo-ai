@@ -49,23 +49,34 @@ export function useUserProfile() {
 }
 
 export function useUserDiscussions() {
-    const { data: identityId } = useIdentityId();
+    const { data: identityId, isLoading: identityLoading } = useIdentityId();
     
-    console.log('useUserDiscussions - identityId:', identityId, 'enabled:', !!identityId);
+    console.log('useUserDiscussions - identityId:', identityId, 'enabled:', !!identityId, 'identityLoading:', identityLoading);
     
-    return useQuery({
+    const query = useQuery({
       queryKey: ['userDiscussions', identityId],
       queryFn: () => {
+        console.log('useUserDiscussions - queryFn called with identityId:', identityId);
         return identityId ? getUserDiscussions(identityId) : [];
       },
       enabled: !!identityId, // Only enabled when identityId is available
       staleTime: 2 * 60 * 1000,
       refetchOnWindowFocus: false,
       select: (data) => {
+        console.log('useUserDiscussions - select called with data:', data);
         const result = data ?? [];
         return result;
       },
     });
+    
+    console.log('useUserDiscussions - query result:', {
+      data: query.data,
+      isLoading: query.isLoading,
+      error: query.error,
+      isSuccess: query.isSuccess
+    });
+    
+    return query;
   }
 
 // Manual refetch function
@@ -127,7 +138,21 @@ export function useUpdateDiscussion() {
       const { sendMessage } = await import('@/components/api/userStorage');
       return sendMessage(discussionId, message, currDiscussion);
     },
-    onSuccess: (_, { discussionId, message }) => {
+    onSuccess: (result, { discussionId, message }) => {
+      // Handle the new response format from sendMessage
+      if (result && result.updatedDiscussion && identityId) {
+        // Update the cache with the new discussion data
+        queryClient.setQueryData(['userDiscussions', identityId], (oldData: any) => {
+          if (!oldData) return oldData;
+          
+          const updatedData = Array.isArray(oldData) 
+            ? oldData.map(d => d.id === discussionId ? result.updatedDiscussion : d)
+            : { ...oldData, [discussionId]: result.updatedDiscussion };
+          
+          console.log('Updated cache with new discussion data from hook:', updatedData);
+          return updatedData;
+        });
+      }
     },
     onError: (error) => {
       console.error('Failed to update discussion:', error);

@@ -8,16 +8,16 @@ import { BookOpen, Send, Bookmark, User } from "lucide-react";
 import { useAuthenticated, useUserDiscussions, useUserProfile, useCreateDiscussion, useUpdateDiscussion } from "@/hooks/useUserData";
 import { useQueryClient } from "@tanstack/react-query";
 import { fetchAuthSession } from "aws-amplify/auth";
-import { Discussion } from "./api/userStorage";
-import { profile } from "console";
+import { Discussion, PHILOSOPHER_NAMES } from "./api/userStorage";
 
 
 export interface Message {
   id: number;
   text: string;
-  sender: 'user' | 'philosopher';
+  sender: 'user' | 'philosopher' | 'system';
   timestamp: Date;
   isHighlight?: boolean;
+  type?: string;
 }
 export const PHILOSOPHER_ICONS: Record<string, string> = {
   aristotle:      '🦉',  // wisdom, Lyceum’s owl
@@ -70,11 +70,13 @@ const ChatInterface = () => {
   
   // Convert userDiscussions to array of Discussion objects
   const safeUserDiscussions = (() => {
+    console.log('safeUserDiscussions - userDiscussions:', userDiscussions);
     if (!userDiscussions) return [];
     if (Array.isArray(userDiscussions)) return userDiscussions;
     if (typeof userDiscussions === 'object') {
       // If it's an object, convert to array
       const discussionsArray = Object.values(userDiscussions);
+      console.log('safeUserDiscussions - converted to array:', discussionsArray);
       return discussionsArray;
     }
     return [];
@@ -87,14 +89,29 @@ const ChatInterface = () => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [currentMessage, setCurrentMessage] = useState("");
   const [discussionType, setDiscussionType] = useState('dilemma');
+  const [isAIThinking, setIsAIThinking] = useState(false);
 
   const currDiscussion = safeUserDiscussions.find(discussion => discussion.id === currDiscussionId);
+  console.log('currDiscussion lookup:', {
+    currDiscussionId,
+    safeUserDiscussionsLength: safeUserDiscussions.length,
+    safeUserDiscussionsIds: safeUserDiscussions.map(d => d.id),
+    currDiscussion
+  });
 
   // Get the current philosopher from URL or default to 'aristotle'
   const goToPhilosopherChat = (philosopher: string) => {
     // navigate to "/target-path"
     nav(`/chat/${philosopher}`);
-    setMessages(userDiscussions[currDiscussionId].messages);
+    
+    // Find the discussion in the safe array
+    const discussion = safeUserDiscussions.find(d => d.id === currDiscussionId);
+    if (discussion && discussion.messages) {
+      setMessages(discussion.messages);
+    } else {
+      console.warn('Discussion not found for navigation:', currDiscussionId);
+      setMessages([]);
+    }
   };
   const goToSignIn = () => {
     nav('/auth/signin=true')
@@ -108,9 +125,23 @@ const ChatInterface = () => {
       setMessages([]);
     }
   }, [currDiscussion]);
+  
+  // Load messages from current discussion when it changes
+  useEffect(() => {
+    if (currDiscussion) {
+      setMessages(currDiscussion.messages);
+    } else {
+      setMessages([]);
+    }
+  }, [currDiscussion]);
 
   if (discussionsIsLoading) {
-    return <div>Loading...</div>;
+    return <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 flex items-center justify-center">
+      <div className="text-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
+        <p className="text-lg text-muted-foreground">Loading chat...</p>
+      </div>
+    </div>;
   }
   // Philosopher data mapping
   const philosopherData = {
@@ -160,6 +191,15 @@ const ChatInterface = () => {
         timestamp: new Date()
       };
       
+      // Immediately add the user's message to the chat view
+      setMessages(prev => [...prev, newMessage]);
+      
+      // Clear the input field immediately
+      setCurrentMessage("");
+      
+      // Show AI thinking state
+      setIsAIThinking(true);
+      
       try {
         // If no discussion ID exists, generate a new one and navigate to it
         let discussionIdToUse = currDiscussionId;
@@ -171,11 +211,29 @@ const ChatInterface = () => {
         
         if (safeUserDiscussions.some(d => d.id === discussionIdToUse)) {
           // Use the mutation to update existing discussion and update cache
-          await updateDiscussionMutation.mutateAsync({ 
+          const result = await updateDiscussionMutation.mutateAsync({ 
             discussionId: discussionIdToUse, 
             message: newMessage,
             currDiscussion: currDiscussion
           });
+          
+          // Check if we got an updated discussion from the backend
+          if (result && result.updatedDiscussion) {
+            console.log('Received updated discussion from backend:', result.updatedDiscussion);
+            
+            // Validate the updated discussion structure
+            if (result.updatedDiscussion.messages && Array.isArray(result.updatedDiscussion.messages)) {
+              // Update local messages with the complete discussion from backend
+              setMessages(result.updatedDiscussion.messages);
+              console.log('Updated local messages with:', result.updatedDiscussion.messages);
+            } else {
+              console.error('Updated discussion missing or invalid messages:', result.updatedDiscussion);
+            }
+          } else {
+            console.log('No updated discussion received from backend, result:', result);
+          }
+          
+          // Message already added to local state above, no need to add again
         } else {
           // Use the mutation to create discussion and update cache
           console.log('Creating new discussion with discussionType:', discussionType);
@@ -184,6 +242,13 @@ const ChatInterface = () => {
             message: newMessage ,
             philosopher: discussionType
           });
+          
+          // Update the local messages with the complete discussion from the backend
+          if (newDiscussion && newDiscussion.messages) {
+            // Replace the local messages with the complete discussion from the backend
+            // This includes the user message, system message, and AI response
+            setMessages(newDiscussion.messages);
+          }
           
           // Manually update the local array as a backup
       /*    if (newDiscussion) {
@@ -194,7 +259,7 @@ const ChatInterface = () => {
             
             if (identityId) {
               queryClient.setQueryData(['userDiscussions', identityId], (oldData: any) => {
-                const newData = Array.isArray(oldData) ? [...oldData, newDiscussion] : [newDiscussion];
+                const newData = Array.isArray(oldData) ? [...oldData, newDiscussion] : [newData];
                 console.log('Manual cache update - new data:', newData);
                 return newData;
               });
@@ -202,10 +267,19 @@ const ChatInterface = () => {
           }*/
         }
         
-      //  setMessages(prev => [...prev, newMessage]);
-        setCurrentMessage("");
+        // Hide AI thinking state
+        setIsAIThinking(false);
+        
       } catch (err) {
-        console.log("Unable to send message:", err);
+        console.error("Unable to send message:", err);
+        // Hide AI thinking state on error
+        setIsAIThinking(false);
+        
+        // Show error to user (you could add a toast notification here)
+        // For now, just log the error
+        
+        // Optionally remove the message from the chat view if the operation failed
+        // setMessages(prev => prev.filter(msg => msg.id !== newMessage.id));
       }
     }
   };
@@ -233,7 +307,7 @@ const ChatInterface = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 flex flex-col">
+    <div className="h-screen bg-gradient-to-br from-gray-50 to-gray-100 flex flex-col overflow-hidden">
       {/* Header */}
       <header className="border-b bg-white/80 backdrop-blur-sm">
         <div className="container mx-auto px-4 py-4">
@@ -262,10 +336,10 @@ const ChatInterface = () => {
         </div>
       </header>
 
-      <div className="flex-1 flex">
+      <div className="flex-1 flex min-h-0">
         {/* Sidebar */}
         {isAuthenticated ? (
-          <div className="w-80 bg-white border-r p-6 hidden lg:block flex flex-col">
+          <div className="w-80 bg-white border-r p-6 hidden lg:block flex flex-col min-h-0">
             {/* New Conversation Button - At top */}
             <Button 
               variant="outline" 
@@ -283,11 +357,21 @@ const ChatInterface = () => {
               New Discussion
             </Button>
             
+
+            
+
+            
             {/* iMessage-like Contacts List */}
             <div className="flex-1 flex flex-col">
               <h3 className="font-semibold text-lg mb-4 text-primary">Conversations</h3>
-              <div className="space-y-2 overflow-y-auto pr-2 flex-1" style={{ maxHeight: 'calc(100vh - 200px)' }}>
-              {safeUserDiscussions.map((discussion) => {
+              
+
+              
+              <div className="space-y-2 overflow-y-auto pr-2 flex-1 scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100" style={{ maxHeight: 'calc(100vh - 200px)' }}>
+              
+
+              
+                            {safeUserDiscussions.map((discussion) => {
                 const isActive = discussion.id === currDiscussionId;
                 const lastMessage = discussion.messages[discussion.messages.length - 1];
                 const timestamp = lastMessage ? formatTime(lastMessage.timestamp) : 'No messages';
@@ -324,6 +408,8 @@ const ChatInterface = () => {
                           {lastMessage ? lastMessage.text : 'Start a new conversation...'}
                         </p>
                       </div>
+                      
+
                     </div>
                   </div>
                 );
@@ -333,7 +419,7 @@ const ChatInterface = () => {
         </div>
         ) : <></>}
         {/* Main Chat Area */}
-        <div className="flex-1 flex flex-col">
+        <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
           {/* Chat Header */}
           {currDiscussion ? (
             <div className="bg-white border-b p-4 lg:hidden">
@@ -349,7 +435,7 @@ const ChatInterface = () => {
         
 
           {/* Messages */}
-          <div className="flex-1 overflow-y-auto p-4 space-y-4">
+          <div className="flex-1 overflow-y-auto p-4 space-y-4 scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100" style={{ height: 'calc(100vh - 200px)', minHeight: 0 }}>
             {messages.length === 0 && (
               <div className="flex flex-col justify-center items-center h-full space-y-8">
                 <div className="text-center max-w-2xl">
@@ -390,59 +476,129 @@ const ChatInterface = () => {
                 </div>
               </div>
             )}
-            {messages.map((message) => (
-              <div
-                key={message.id}
-                className={`flex ${message.sender === 'user' ? 'justify-end' : 'justify-start'}`}
-              >
+            {messages.map((message, index) => (
+              <React.Fragment key={message.id}>
+                {/* Show philosopher header above philosopher messages */}
+                {message.sender === 'philosopher' && (
+                  <div className="flex justify-start mb-2">
+                    <div className="flex items-center space-x-2 px-4">
+                      <span className="text-lg">
+                        {currDiscussion?.philosopherId && PHILOSOPHER_ICONS[currDiscussion.philosopherId]}
+                      </span>
+                      <span className="text-sm font-medium text-primary">
+                        {currDiscussion?.philosopherId && PHILOSOPHER_NAMES[currDiscussion.philosopherId]}
+                      </span>
+                    </div>
+                  </div>
+                )}
+                
                 <div
-                  className={`max-w-xs lg:max-w-md px-4 py-3 rounded-lg ${
-                    message.sender === 'user'
-                      ? 'bg-accent text-white'
-                      : 'bg-white border shadow-sm'
-                  } ${message.isHighlight ? 'ring-2 ring-accent/50' : ''}`}
+                  className={`flex ${message.sender === 'user' ? 'justify-end' : 'justify-start'}`}
                 >
-                  <p className="text-sm">{message.text}</p>
-                  <div className="flex items-center justify-between mt-2">
-                    <span className={`text-xs ${
-                      message.sender === 'user' ? 'text-white/70' : 'text-muted-foreground'
-                    }`}>
-                      {formatTime(message.timestamp)}
-                    </span>
-                    {message.sender === 'philosopher' && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => toggleHighlight(message.id)}
-                        className={`h-6 w-6 p-0 ${
-                          message.isHighlight ? 'text-accent' : 'text-muted-foreground'
-                        }`}
-                      >
-                        <Bookmark className="h-3 w-3" />
-                      </Button>
-                    )}
+                  <div
+                    className={`max-w-xs lg:max-w-md px-4 py-3 rounded-lg ${
+                      message.sender === 'user'
+                        ? 'bg-accent text-white'
+                        : message.sender === 'system' && message.type === 'philosopher_match'
+                        ? 'hidden' // Hide the system message as we'll show it separately
+                        : 'bg-white border shadow-sm'
+                    } ${message.isHighlight ? 'ring-2 ring-accent/50' : ''}`}
+                  >
+                    <p className="text-sm">{message.text}</p>
+                    <div className="flex items-center justify-between mt-2">
+                      <span className={`text-xs ${
+                        message.sender === 'user' ? 'text-white/70' : 'text-muted-foreground'
+                      }`}>
+                        {formatTime(message.timestamp)}
+                      </span>
+                      {message.sender === 'philosopher' && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => toggleHighlight(message.id)}
+                          className={`h-6 w-6 p-0 ${
+                            message.isHighlight ? 'text-accent' : 'text-muted-foreground'
+                          }`}
+                        >
+                          <Bookmark className="h-3 w-3" />
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+                
+                {/* Display philosopher match message for new discussions based on discussionType */}
+                {index === 0 && 
+                 message.sender === 'user' && 
+                 discussionType !== 'dilemma' && 
+                 discussionType !== '' && 
+                 !messages.some(msg => msg.sender === 'system' && msg.type === 'philosopher_match') && (
+                  <div className="flex justify-center my-4">
+                    <div className="bg-gradient-to-r from-blue-500 to-purple-600 text-white px-6 py-3 rounded-full shadow-lg">
+                      <div className="flex items-center space-x-2">
+                        <span className="text-2xl">
+                          {PHILOSOPHER_ICONS[discussionType]}
+                        </span>
+                        <span className="font-semibold">
+                          You've been matched with {PHILOSOPHER_NAMES[discussionType]}!
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+                
+                {/* Display system philosopher match message from backend data */}
+                {message.sender === 'system' && message.type === 'philosopher_match' && (
+                  <div className="flex justify-center my-4">
+                    <div className="bg-gradient-to-r from-blue-500 to-purple-600 text-white px-6 py-3 rounded-full shadow-lg">
+                      <div className="flex items-center space-x-2">
+                        <span className="text-2xl">
+                          {currDiscussion?.philosopherId && PHILOSOPHER_ICONS[currDiscussion.philosopherId]}
+                        </span>
+                        <span className="font-semibold">
+                          {message.text}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </React.Fragment>
+            ))}
+            
+            {/* AI Thinking Indicator */}
+            {isAIThinking && (
+              <div className="flex justify-start">
+                <div className="bg-white border shadow-sm max-w-xs lg:max-w-md px-4 py-3 rounded-lg">
+                  <div className="flex items-center space-x-2">
+                    <div className="flex space-x-1">
+                      <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"></div>
+                      <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{animationDelay: '0.1s'}}></div>
+                      <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{animationDelay: '0.2s'}}></div>
+                    </div>
+                    <span className="text-sm text-muted-foreground">PhiloAI is thinking...</span>
                   </div>
                 </div>
               </div>
-            ))}
+            )}
           </div>
 
           {/* Input Area */}
-          <div className="bg-white border-t p-4">
+          <div className="bg-white border-t p-4 flex-shrink-0 mt-auto">
             <div className="flex space-x-2">
               <Input
                 value={currentMessage}
                 onChange={(e) => setCurrentMessage(e.target.value)}
                 onKeyPress={handleKeyPress}
-                placeholder="Share your thoughts or ask a question..."
+                placeholder={isAIThinking ? "PhiloAI is thinking..." : "Share your thoughts or ask a question..."}
                 className="flex-1"
+                disabled={isAIThinking}
               />
               <Button
                 onClick={handleSendMessage}
-                disabled={!currentMessage.trim()}
+                disabled={!currentMessage.trim() || isAIThinking}
                 className="bg-accent hover:bg-accent/90"
               >
-                <Send className="h-4 w-4" />
+                {isAIThinking ? 'Thinking...' : <Send className="h-4 w-4" />}
               </Button>
             </div>
             <p className="text-xs text-muted-foreground mt-2">
